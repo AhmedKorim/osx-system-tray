@@ -84,8 +84,8 @@ impl OsxSystemTray {
             for e in lister {
                 match e {
                     OsxSystemTrayEvent::ChangeImage(image) => unsafe {
-                        const ICON_WIDTH: f64 = 18.0;
-                        const ICON_HEIGHT: f64 = 18.0;
+                        const ICON_WIDTH: f64 = 32.0;
+                        const ICON_HEIGHT: f64 = 32.0;
                         let nsdata = NSData::dataWithBytes_length_(
                             nil,
                             image.as_ptr() as *const std::os::raw::c_void,
@@ -145,8 +145,8 @@ impl OsxSystemTray {
 }
 
 unsafe fn set_tray_icon(tray: id, buffer: &[u8]) {
-    const ICON_WIDTH: f64 = 18.0;
-    const ICON_HEIGHT: f64 = 18.0;
+    const ICON_WIDTH: f64 = 32.0;
+    const ICON_HEIGHT: f64 = 32.0;
     let nsdata = NSData::dataWithBytes_length_(
         nil,
         buffer.as_ptr() as *const std::os::raw::c_void,

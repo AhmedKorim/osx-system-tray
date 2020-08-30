@@ -10,7 +10,7 @@ use image::{
 use osx_system_tray::{OsxSystemTray, OsxSystemTrayEvent};
 
 pub fn main() {
-    const ICON_BUFFER: &'static [u8] = include_bytes!("rust-logo.png");
+    const ICON_BUFFER: &'static [u8] = include_bytes!("480px-Servo_logo.png");
     let mut osx_tray = OsxSystemTray::new();
     osx_tray.set_tray_icon_from_buffer(ICON_BUFFER);
     let rx = osx_tray.handler.clone();
