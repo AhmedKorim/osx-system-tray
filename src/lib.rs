@@ -19,29 +19,36 @@ use cocoa::base::{id, nil, selector, NO};
 use cocoa::foundation::{
     NSAutoreleasePool, NSData, NSPoint, NSProcessInfo, NSRect, NSSize, NSString,
 };
+use objc::runtime::Object;
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub struct OsxSystemTray {
-    pub app: Arc<Mutex<id>>,
-    pub tray: Arc<Mutex<id>>,
+    pub app: SafeId,
+    pub tray: SafeId,
     pub handler: Sender<OsxSystemTrayEvent>,
 }
 
+#[derive(Clone, Debug)]
+pub struct SafeId(Arc<Mutex<*mut Object>>);
+
 pub enum OsxSystemTrayEvent {
-    ChangeImage(&'static [u8]),
+    ChangeImage(Vec<u8>),
     Shutdown,
 }
 
-unsafe impl Send for OsxSystemTray {}
+unsafe impl Send for SafeId {}
+
+unsafe impl Sync for SafeId {}
+// unsafe impl Send for OsxSystemTray {}
 
 impl OsxSystemTray {
     pub fn new_with_app(app: id) -> Self {
         let tray = unsafe { OsxSystemTray::init_tray() };
         let (event_tx, event_rx) = channel();
         let mut osx_tray = OsxSystemTray {
-            app: Arc::new(Mutex::new(app)),
-            tray: Arc::new(Mutex::new(tray)),
+            app: SafeId(Arc::new(Mutex::new(app))),
+            tray: SafeId(Arc::new(Mutex::new(tray))),
             handler: event_tx,
         };
         osx_tray.run_lister(event_rx);
@@ -57,8 +64,8 @@ impl OsxSystemTray {
         let tray = unsafe { OsxSystemTray::init_tray() };
         let (event_tx, event_rx) = channel();
         let mut osx_tray = OsxSystemTray {
-            app: Arc::new(Mutex::new(app)),
-            tray: Arc::new(Mutex::new(tray)),
+            app: SafeId(Arc::new(Mutex::new(app))),
+            tray: SafeId(Arc::new(Mutex::new(tray))),
             handler: event_tx,
         };
         osx_tray.run_lister(event_rx);
@@ -67,38 +74,35 @@ impl OsxSystemTray {
 
     pub fn run(&mut self) {
         unsafe {
-            self.app.clone().lock().unwrap().run();
+            self.app.0.clone().lock().unwrap().run();
         }
     }
     fn run_lister(&mut self, rx: Receiver<OsxSystemTrayEvent>) -> JoinHandle<()> {
-        let tray = Arc::clone(&self.tray);
-        thread::spawn(move || {
-            loop {
-                let lister = rx.try_iter();
-                for e in lister {
-                    match e {
-                        OsxSystemTrayEvent::ChangeImage(image) => unsafe {
-                            let tray = self.tray.lock().unwrap();
+        let tray = self.tray.clone();
+        thread::spawn(move || loop {
+            let lister = rx.try_iter();
+            for e in lister {
+                match e {
+                    OsxSystemTrayEvent::ChangeImage(image) => unsafe {
+                        const ICON_WIDTH: f64 = 18.0;
+                        const ICON_HEIGHT: f64 = 18.0;
+                        let nsdata = NSData::dataWithBytes_length_(
+                            nil,
+                            image.as_ptr() as *const std::os::raw::c_void,
+                            image.len() as u64,
+                        )
+                        .autorelease();
 
-                            const ICON_WIDTH: f64 = 18.0;
-                            const ICON_HEIGHT: f64 = 18.0;
-                            let nsdata = NSData::dataWithBytes_length_(
-                                nil,
-                                image.as_ptr() as *const std::os::raw::c_void,
-                                image.len() as u64,
-                            )
-                            .autorelease();
+                        let nsimage = unsafe {
+                            NSImage::initWithData_(NSImage::alloc(nil), nsdata).autorelease()
+                        };
+                        let new_size = NSSize::new(ICON_WIDTH, ICON_HEIGHT);
 
-                            let nsimage = unsafe {
-                                NSImage::initWithData_(NSImage::alloc(nil), nsdata).autorelease()
-                            };
-                            let new_size = NSSize::new(ICON_WIDTH, ICON_HEIGHT);
-                            let r: () = msg_send![nsimage, setSize: new_size];
-                            tray.button().setImage_(nsimage);
-                        },
-                        OsxSystemTrayEvent::Shutdown => {
-                            unimplemented!();
-                        }
+                        let r: () = msg_send![nsimage, setSize: new_size];
+                        tray.0.lock().unwrap().button().setImage_(nsimage);
+                    },
+                    OsxSystemTrayEvent::Shutdown => {
+                        unimplemented!();
                     }
                 }
             }
@@ -128,6 +132,7 @@ impl OsxSystemTray {
 
             let r: () = msg_send![nsimage, setSize: new_size];
             self.tray
+                .0
                 .clone()
                 .lock()
                 .unwrap()
